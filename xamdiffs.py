@@ -74,10 +74,8 @@ def node_name(node):
 def write_diffed(node1, node2):
     if len(node1.attrib) < len(node2.attrib):
         new_attribs.append([node_diff(node1,node2),node_name(node1)])
-        #stream.write(indent("<" + node.tag + ">", level))
     elif len(node1.attrib) > len(node2.attrib):
         old_attribs.append([node_diff(node1,node2),node_name(node1)])
-        #stream.write(indent("<" + node_str(node,level), level) + "\n" + indent(">", level))
     else:
         if node_diff(node1,node2):
             changed_attribs.append([node_diff(node1,node2),node_name(node1)])
@@ -90,8 +88,6 @@ def write_diffed(node1, node2):
         j = 0
         while i < len(subnodes1):
             while j < len(subnodes2):
-                #print(subnodes1[i].attrib, "\n", subnodes2[j].attrib, "\n\n")
-                #print((subnodes1[i].find('[@'+NAME+']') is not None) == (subnodes2[j].find('[@'+NAME+']') is not None))
                 if (subnodes1[i].find('[@'+NAME+']') is not None) and (subnodes2[j].find('[@'+NAME+']') is not None):
                     if subnodes1[i].attrib[NAME] == subnodes2[j].attrib[NAME]:
                         write_diffed(subnodes1[i], subnodes2[j])
@@ -114,12 +110,6 @@ def write_diffed(node1, node2):
         else:
             for subnode1 in subnodes1:
                 old_nodes.append([write_nodes(subnode1),node_name(node1)])
-            #write_sorted(stream, subnode, level + 1)
-
-        #stream.write(indent("</" + node.tag + ">\n", level))
-
-    #else:
-        #stream.write(indent("<" + node_str(node,level) + "\n", level) + indent("/>\n", level))
 
 def write_nodes(node, level=0):
     subnodes = list(node)
@@ -153,61 +143,6 @@ else:
     def unicode_writer(fp):
         return fp
 
-def differ(tmp1, tmp2):
-    file_1 = open(tmp1.name, 'r')
-    file_2 = open(tmp2.name, 'r')
-
-    file_1_line = file_1.readline()
-    file_2_line = file_2.readline()
-
-    prev_file_1_line = file_1_line
-    prev_file_2_line = file_2_line
-
-    line_no = 1
-
-    """
-    with open(tmp1.name) as file1:
-        with open(tmp2.name) as file2:
-            same = set(file1).intersection(file2)
-    print("Common Lines in Both Files")
-    for line in same:
-        print(line, end='')
-    print('\n')
-    """
-    print("Difference Lines in Both Files")
-    while (file_1_line.find("</manifest>") == -1) and (file_2_line.find("</manifest>") == -1):
-        # Removing whitespaces
-        #file_1_line = file_1_line.rstrip()
-        #file_2_line = file_2_line.rstrip()
-        # Compare the lines from both file
-   #     if file_1_line.find(NAME) == -1:
-  #          file_1_line = file_1_line.replace('{http://schemas.android.com/apk/res/android}', '')
- #       if file_2_line.find(NAME) == -1:
-#            file_2_line = file_2_line.replace('{http://schemas.android.com/apk/res/android}', '')
-        if file_1_line != file_2_line:
-            # otherwise output the line on file1 and use @ sign
-            if file_1_line < file_2_line:
-                while file_1_line != file_2_line and line_no<200:
-                    print("@",file_1_line, file_2_line)
-                    file_1_line = file_1.readline()
-                    print("\ndebug",file_1_line)
-                    line_no=line_no+1
-            else:
-                while (file_1_line != file_2_line) and (line_no<20):
-                    print("#",file_2_line, file_1_line)
-                    file_2_line = file_2.readline()
-                    print("\ndebug",file_2_line)
-                    line_no=line_no+1
-            # Print a empty line
-            #print()
-        # Read the next line from the file
-        #prev_file_1_line = file_1_line
-        #prev_file_2_line = file_2_line
-        else:
-            file_1_line = file_1.readline()
-            file_2_line = file_2.readline()
-        line_no += 1
-
 def xmldiffs(file1, file2, diffargs=["-u"]):
     tree = ET.parse(file1)
     tmp1 = unicode_writer(NamedTemporaryFile('w'))
@@ -224,7 +159,6 @@ def xmldiffs(file1, file2, diffargs=["-u"]):
     args += [ "--label", file1, "--label", file2 ]
     args += [ tmp1.name, tmp2.name ]
     return subprocess.call(args)
-    #return differ(tmp1,tmp2)
 
 def listdiffs(file1, file2):
     write_diffed(ET.parse(file1).getroot(),ET.parse(file2).getroot())
