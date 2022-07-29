@@ -4,6 +4,8 @@ Usage: {prog} [OPTION] FILE1 FILE2
 OPTIONS
     --amdiff		Compares two AndroidManifests, ignoring element and attribute order.
     --resdiff		Requires apktool, Disassembles resources and searches for changes in them with keyword list
+    --apkid     Compares results of APKiD
+    --agdiff        Compares classes, methods and fields and prints changed ones
 """
 import sys
 import os
@@ -143,11 +145,6 @@ def listdiffs(file1, file2):
             print("\nDeleted", node_name(node[0]), "in", node[1])
 #            print(write_nodes(node[0]), "in", node[1])
 #            print(node[1] + ":\n" + node[0])
-I=0
-def counti():
-    global I
-    I=I+1
-    print(I)
 
 def diffbykey(filename1,filename2):
     f1 = open(filename1, "r").readlines()
@@ -205,8 +202,8 @@ def resdiff(dir1,dir2):
             if all(word not in str(mimetypes.guess_type(path1)[0]) for word in EXCLUDEDTYPES):
 #                if name != "AndroidManifest.xml":
                     try:
-                        f1 = open(path1, "r").readlines()
-                        f2 = open(path2, "r").readlines()
+                        f1 = [s.strip() for s in open(path1, "r").readlines()]
+                        f2 = [s.strip() for s in open(path2, "r").readlines()]
 #                        diffbykey(path1,path2)
                         isdiffprint=0
                         for line in difflib.unified_diff(f1,f2, n=0):
@@ -214,7 +211,6 @@ def resdiff(dir1,dir2):
                             if any(word in line.lower() for word in KEYWORDLIST) and name!="public.xml":
                                 if isdiffprint == 0:
                                     print("\ndiff_file %s found in %s and %s" % (name, dcmp.left, dcmp.right))
-                                    counti()
                                     isdiffprint=1
                                 printwithkeyword(line)
                     except UnicodeDecodeError:
@@ -229,39 +225,165 @@ def resdiff(dir1,dir2):
             path1 = os.path.join(dcmp.left,name)
             if all(word not in str(mimetypes.guess_type(path1)[0]) for word in EXCLUDEDTYPES):
                 try:
-                    file = open(os.path.join(dcmp.left,name), "r").readlines()
+                    f1 = [s.strip() for s in open(path1, "r").readlines()]
                     isdiffprint=0
-                    for line in file:
+                    for line in f1:
                         if any(word in line.lower() for word in KEYWORDLIST):
                             if isdiffprint == 0:
-                                print("\nleft_only %s found in %s" % (name, dcmp.left))
-                                counti()
+                                print("\nold_only %s found in %s" % (name, dcmp.left))
                                 isdiffprint=1
                             printwithkeyword(line)
                 except UnicodeDecodeError:
-                    print("left_only binary %s found in %s" % (name, dcmp.left))
-                    counti()
+                    print("\nold_only binary %s found in %s" % (name, dcmp.left))
                 except IsADirectoryError:
-                    print("left_only directory %s found in %s" % (name, dcmp.left))
-                    counti()
+                    print("\nold_only directory %s found in %s" % (name, dcmp.left))
         for name in dcmp.right_only:
-            path1 = os.path.join(dcmp.left,name)
-            if all(word not in str(mimetypes.guess_type(path1)[0]) for word in EXCLUDEDTYPES):
+            path2 = os.path.join(dcmp.right,name)
+            if all(word not in str(mimetypes.guess_type(path2)[0]) for word in EXCLUDEDTYPES):
                 try:
-                    file = open(os.path.join(dcmp.right,name), "r").readlines()
+                    f2 = [s.strip() for s in open(path2, "r").readlines()]
                     isdiffprint=0
-                    for line in file:
+                    for line in f2:
                         if any(word in line.lower() for word in KEYWORDLIST):
                             if isdiffprint == 0:
-                                print("\nright_only %s found in %s" % (name, dcmp.right))
-                                counti()
+                                print("\nnew_only %s found in %s" % (name, dcmp.right))
                                 isdiffprint=1
                             printwithkeyword(line)
                 except UnicodeDecodeError:
-                    print("right_only binary %s found in %s" % (name, dcmp.right))
-                    counti()
+                    print("\nnew_only binary %s found in %s" % (name, dcmp.right))
     dcmp = filecmp.dircmp(dir1, dir2)
     print_diff_files(dcmp) 
+
+def apkid_print(apk1,apk2):
+    import apkid.apkid as apkid
+    options = apkid.Options(
+        timeout=45,
+        verbose=False,
+        entry_max_scan_size=100 * 1024 * 1024,
+        recursive=True,
+    )
+    output = apkid.OutputFormatter(
+        json_output=True,
+        output_dir=None,
+        rules_manager=apkid.RulesManager(),
+        include_types=False
+    )
+    rules = options.rules_manager.load()
+    scanner = apkid.Scanner(rules, options)
+    res1 = scanner.scan_file(apk1)
+    res2 = scanner.scan_file(apk2)
+#    scanner.scan(apk)
+    try:
+        findings1 = output._build_json_output(res1)['files']
+        findings2 = output._build_json_output(res2)['files']
+    except AttributeError:
+        # apkid >= 2.0.3
+        findings1 = output.build_json_output(res1)['files']
+        findings2 = output.build_json_output(res2)['files']
+    sanitized = {}
+    match = True
+    if len(findings1) != len(findings2):
+        match = False
+    else:
+        for i in range(len(findings1)):
+            filename1 = findings1[i]['filename']
+            sanitized[filename1] = findings1[i]['matches']
+            if findings1[i]['matches'] != findings2[i]['matches']:
+                match = False
+    scanner.scan(apk1)
+    if match:
+        print("\x1b[6;32;40mIDENTICAL\x1b[0m")
+    else:
+        print("\x1b[6;31;40mNOT IDENTICAL\x1b[0m")
+        scanner.scan(apk2)
+
+def agdiff(dx1,dx2):
+    print("CHANGED CLASSES:")
+    classes1 = list(dx1.get_classes())
+    classes2 = list(dx2.get_classes())
+    classes1 = sorted(classes1, key=lambda x:x.name)
+    classes2 = sorted(classes2, key=lambda x:x.name)
+
+    i = 0
+    j = 0    
+    while i != len(classes1) and j != len(classes2):
+        if (classes1[i].name) == (classes2[j].name):
+            i+=1
+            j+=1
+        elif (classes1[i].name) < (classes2[j].name):
+            print(classes1[i].name)
+            i+=1
+        elif (classes1[i].name) > (classes2[j].name):
+            print(classes2[j].name)
+            j+=1
+    if i == len(classes1):
+        while j != len(classes2):
+            print(classes2[j].name)
+            j+=1
+    elif j == len(classes2):
+        while i != len(classesi):
+            print(classes1[i].name)
+            i+=1
+                
+    print("CHANGED METHODS:")
+    methods1 = list(dx1.get_methods())
+    methods2 = list(dx2.get_methods())
+    methods1 = sorted(methods1, key=lambda x:x.full_name)
+    methods2 = sorted(methods2, key=lambda x:x.full_name)
+
+    i = 0
+    j = 0
+    while i != len(methods1) and j != len(methods2):
+        if (methods1[i].full_name) == (methods2[j].full_name):
+            i+=1
+            j+=1
+        elif (methods1[i].full_name) < (methods2[j].full_name):
+            print(methods1[i].full_name)
+            i+=1
+        elif (methods1[i].full_name) > (methods2[j].full_name):
+            print(methods2[j].full_name)
+            j+=1
+    if i == len(methods1):
+        while j != len(methods2):
+            print(methods2[j].full_name)
+            j+=1
+    elif j == len(methods2):
+        while i != len(methodsi):
+            print(methods1[i].full_name)
+            i+=1
+
+    print("CHANGED FIELDS:")
+    fields1 = list(dx1.get_fields())
+    fields2 = list(dx2.get_fields())
+    def get_full_name(x):
+        if x.field.access_flags_string is not None:
+            return x.field.class_name+x.field.name+x.field.proto+x.field.access_flags_string
+        else:
+            return x.field.class_name+x.field.name+x.field.proto
+    fields1 = sorted(fields1, key=get_full_name)
+    fields2 = sorted(fields2, key=get_full_name)
+
+    i = 0
+    j = 0
+    while i != len(fields1) and j != len(fields2):
+        if (get_full_name(fields1[i])) == (get_full_name(fields2[j])):
+            i+=1
+            j+=1
+        elif (get_full_name(fields1[i])) < (get_full_name(fields2[j])):
+            print(fields1[i].field)
+            i+=1
+        elif (get_full_name(fields1[i])) > (get_full_name(fields2[j])):
+            print(fields2[j].field)
+            j+=1
+    if i == len(fields1):
+        while j != len(fields2):
+            print(fields2[j].field)
+            j+=1
+    elif j == len(fields2):
+        while i != len(fieldsi):
+            print(fields1[i].field)
+            i+=1
+
 
 def print_usage(prog):
     print(__doc__.format(prog=prog).strip())
@@ -286,20 +408,22 @@ if __name__ == '__main__':
             subprocess.call(['apktool','d',file1,'-f','-o','/tmp/apk1'], stderr=subprocess.STDOUT)
             subprocess.call(['apktool','d',file2,'-f','-o','/tmp/apk2'], stderr=subprocess.STDOUT)
             exit(resdiff("/tmp/apk1","/tmp/apk2"))
-        if '--enumdiff' in args:
-            s = session.Session()
-            with open(file1, "rb") as fd:
-                s.add(file1, fd.read())
-            export_apps_to_format(file1, s, "/tmp/apkdiffer1")
-            s = session.Session()
-            with open(file2, "rb") as fd:
-                s.add(file2, fd.read())
-            export_apps_to_format(file2, s, "/tmp/apkdiffer2")
-#            exit(resdiff("/tmp/apkdiffer1","/tmp/apkdiffer2"))
-        a1, d1, dx1 = AnalyzeAPK(file1)
-        a2, d2, dx2 = AnalyzeAPK(file2)
-        xml1 = a1.get_android_manifest_xml()
-        xml2 = a2.get_android_manifest_xml()
+        if '--apkid' in args:
+            exit(apkid_print(file1, file2))
+        if '--agdiff' in args:
+            a1, d1, dx1 = AnalyzeAPK(file1)
+            a2, d2, dx2 = AnalyzeAPK(file2)
+            #for word in KEYWORDLIST:
+            #    for field in dx1.find_fields(fieldname="(?i).*"+word+".*"):
+            #        print(field.field)
+
+            exit(agdiff(dx1,dx2))
+        if '--amdiff' in args:
+            a1, d1, dx1 = AnalyzeAPK(file1)
+            a2, d2, dx2 = AnalyzeAPK(file2)
+            xml1 = a1.get_android_manifest_xml()
+            xml2 = a2.get_android_manifest_xml()
+            exit(listdiffs(xml1, xml2))
     else:
         xml1 = lxml.etree.parse(file1).getroot()
         xml2 = lxml.etree.parse(file2).getroot()
